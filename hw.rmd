@@ -1,0 +1,203 @@
+---
+title: "Assignment 7"
+
+subtitle: ""
+
+author:
+  - Boyi Zhang^[
+    Department of Statistics, University of Connecticut.]
+    
+    
+    
+    
+date: "`r format(Sys.Date())`"
+documentclass: article
+papersize: letter
+fontsize: 11pt
+biblio-style: asa
+output:
+  pdf_document:  default
+  html_document: default
+  
+--- 
+
+\newpage
+# Ex 5.3.1
+## Find the value of the normalizing constant
+$C$ can be determined by
+\begin{equation}\begin{split}
+C &= \frac{1}{\int_{0}^{\infty}\left(2 x^{\theta-1}+x^{\theta-1 / 2}\right) e^{-x} \mathrm{d} x}\\
+&=\frac{1}{\int_{0}^{\infty}2 x^{\theta-1} e^{-x} \mathrm{d} x +\int_{0}^{\infty}x^{\theta-1 / 2} e^{-x} \mathrm{d} x}\\
+&=\frac{1}{2\Gamma(\theta)+\Gamma(\theta+1/2)}
+\end{split}\end{equation}
+
+The format shows it was mixed with two gamma distribution. One is the $Gamma(\theta,1)$, denote its weight is $\alpha_1$, another one is the $Gamma(\theta+1/2,1)$, denote its weight as $\alpha_2$. Then compare the coefficients, we know the weight ratio is $\frac{\alpha_1}{\alpha_2}=\frac21\frac{\Gamma(\theta)}{\Gamma(\theta+1/2)}=\frac{2\Gamma(\theta)}{\Gamma(\theta+1/2)}$, since $\alpha_1+\alpha_2=1$, so the final result.
+$$g\sim \frac{2\Gamma(\theta)}{2\Gamma(\theta)+\Gamma(\theta+1/2)}Gamma(\theta,1)+\frac{\Gamma(\theta+1/2)}{2\Gamma(\theta)+\Gamma(\theta+1/2)}Gamma(\theta+1/2,1)$$
+
+## Design a procedure (pseudo-code) to sample
+
+```{r eval=FALSE}
+procedure Sampling-g is
+for(i in 1:size){
+  get a random number from standard uniform distribution $\alpha$
+  if $\alpha$ is less than $\alpha_1(=\frac{2\Gamma(\theta)}{2\Gamma(\theta)+\Gamma(\theta+1/2)})$.
+    We sampling from the distribution $Gamma(\theta,1)$.
+  else
+    We sampling from the distribution $Gamma(\theta+1/2,1)$.
+}
+return the list of all samples we got.
+
+```
+We choose $\theta=3$.
+```{r}
+set.seed(233)## For fixed the result.
+sampling_g <- function(n,theta){
+  alpha = 2 * gamma(theta) / (2 * gamma(theta) + gamma(theta+0.5))
+  x = numeric(0)
+  for(i in 1:n){
+    if(runif(1)<alpha){
+      x[i] = rgamma(1,shape=theta,rate=1)
+    }else{
+      x[i] = rgamma(1,shape=theta+0.5,rate=1)
+    }
+  }
+  return(x)
+}
+samples = sampling_g(10000,3)
+library(ks)
+fhat = kde(samples,positive = TRUE)
+plot(fhat,lty=1,main = "KDE of g and Real density function of g",col='red')
+g = function(x,theta=3){
+  return((2 * x ** (theta-1) + x ** (theta-0.5)) / (2 * gamma(theta) + gamma(theta+0.5)) * exp(-x))
+}
+
+plot(g,col='blue',xlim=c(0,14),lty=1,lwd=1,add=TRUE)
+legend(10, 0.25, legend=c("kde of g", "real density g"),
+       col=c("red", "blue"), lty=1:1,lwd=1:1, cex=0.8)
+```
+
+## Design a procedure (pseudo-code) to use rejection sampling
+Also take $\theta=3$.
+```{r eval=FALSE}
+procedure f-sample-g is
+Generate $Y$ from $g$
+Then, Generate $U$ from standard uniform.
+if $U<=f(Y)/Mg(Y)$
+  return Y
+else
+  goto the first step again.
+```
+Checking the validity first, here we know that $\sqrt{x+4}\le 2+\sqrt{x},x>0$ and $f$ and $g$ have the same support $(0,+\infty)$, so we could setup rejection method. By the way, we can setup $M=(G/C)+1$ from above inequality, where $G\int_0^\infty \sqrt{x+4}x^{\theta-1}e^{-x}\mathrm{d} x = 1$.
+```{r}
+f1 <- function(x,theta=3){
+  return(sqrt(x+4) * (x**(theta-1)) * exp(-x))
+}
+f <- function(x,theta=3){
+  G = 1/integrate(f1, lower = 0, upper = Inf)[1]$value
+  return(G * sqrt(x+4) * (x**(theta-1)) * exp(-x) )
+}
+
+set.seed(233)## For fixed the result.
+f_sampling_g <- function(n,theta){
+  x = numeric(0)
+  G = 1/integrate(f1, lower = 0, upper = Inf)[1]$value
+  C = 1/ (2*gamma(theta)+gamma(theta+0.5))
+  M = (C/G) + 1# the mode of gamma(a,1) is a-1 
+  for(i in 1:n){
+    while(TRUE){
+      y = sampling_g(1,theta)
+      if(runif(1)<=f(y,theta)/M/g(y,theta)){
+        x[i] = y
+        break
+      }
+    }
+  }
+  return(x)
+}
+samplef = f_sampling_g(10000,3)
+library(ks)
+fhat2 = kde(samplef,positive = TRUE)
+plot(fhat2,lty=1,main = "KDE of f and Real density function f",col='red')
+plot(f,col='blue',xlim=c(0,14),lty=1,lwd=1,add=TRUE)
+legend(10, 0.25, legend=c("kde of f", "real density f"),
+       col=c("red", "blue"), lty=1:1,lwd=1:1, cex=0.8)
+```
+
+# Ex 6.3.1.
+## Design an MCMC using the Gibbs sampling approach to estimate all 5 parameters
+Let us first generate some data. Setting the parameter as below.
+```{r}
+##setting
+n = 100
+set.seed(114514)
+delta = 0.8#non-informative
+mu1 = 0.2
+mu2 = 0.8
+sigma1 = 0.1
+sigma2 = 0.5
+
+## Generate
+u <- rbinom(n, prob = delta, size = 1)
+x <- rnorm(n,ifelse(u == 1, mu1, mu2),ifelse(u == 1, sigma1, sigma2))
+```
+Now computing posterior density is
+$$
+\begin{equation}\begin{split}
+q(\theta|x)\propto &\prod_x\left[ \delta / \sigma_1 \exp\left(-\left(\frac{\mu_1^2}{2\sigma_1^2}-\frac{\mu_1\ x}{\sigma_1^2}+\frac{\ x^2}{2\sigma_1^2}\right)\right)\\+
+(1-\delta)/\sigma_2 \exp\left(-\left(\frac{\mu_2^2}{2\sigma_2^2}-\frac{\mu_2\ x}{\sigma_2^2}+\frac{x^2}{2\sigma_2^2}\right)\right)\right]\\
+&\times\left[\delta \sigma_1 \exp\left(-\left(\frac{10}{\sigma_1^2}+\frac{\mu_1^2}{200}\right)\right)+(1-\delta) \sigma_2\exp\left(-\left(\frac{10}{\sigma_2^2}+\frac{\mu_2^2}{200}\right)\right)\right]
+\end{split}\end{equation}
+$$
+```{r}
+logpost <- function(theta, x) {
+  mu1 <- theta[1]; mu2 <- theta[2]
+  sigma1 <- theta[3]; sigma2 <- theta[4]
+  delta <- theta[5]
+  return(sum(log(delta/sigma1*exp(-mu1^2/2/sigma1^2+mu1*x/sigma1^2-x^2/2/sigma1^2)+(1-delta)/sigma2*exp(-mu2^2/2/sigma2^2+mu2*x/sigma2^2-x^2/2/sigma2^2)))+log(delta*sigma1*exp(-10/sigma1^2-mu1^2/200)+(1-delta)*sigma2*exp(-10/sigma2^2-mu2^2/200)))
+}
+```
+An MCMC based the Gibbs sampler uses the ARMS algorithm from R package HI.
+```{r}
+mymcmc <- function(niter, thetaInit, data, nburn= 100) {
+  p <- length(thetaInit)
+  thetaCurrent <- thetaInit
+  ## define a function for full conditional sampling  
+  logFC <- function(th, idx) {
+    theta <- thetaCurrent
+    theta[idx] <- th
+    return(logpost(theta, data))
+  }
+  out <- matrix(thetaInit, niter, p, byrow = TRUE)
+  ## Gibbs sampling
+  for (i in 2:niter) {
+    for (j in 1:p) {
+      ## general-purpose arms algorithm
+      out[i, j] <- thetaCurrent[j] <-
+          HI::arms(thetaCurrent[j], logFC,
+                   function(data, idx) ((data > 0) * (data < 1)), 
+                   1, idx = j)
+      
+    }
+  }
+  out[-(1:nburn),]
+}
+niter <- 800; nburn <- 100
+thetaInit <- c(0.3,0.3,0.3,0.3,0.4)
+sim <- mymcmc(niter, thetaInit, x,nburn=nburn)
+```
+
+This parameter $\mu_1$ we set as $0.2$.
+```{r}
+plot(ts(sim[,2]))
+```
+This parameter $\mu_2$ we set as $0.8$.
+```{r}
+plot(ts(sim[,1]))
+```
+
+This parameter $1-\delta$ we set as $0.2$.
+```{r}
+plot(ts(sim[,5]))
+```
+
+bookdown::render_book('hw.rmd','bookdown::gitbook')
