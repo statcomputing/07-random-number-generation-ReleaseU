@@ -36,7 +36,7 @@ $$g\sim \frac{2\Gamma(\theta)}{2\Gamma(\theta)+\Gamma(\theta+1/2)}Gamma(\theta,1
 
 ## Design a procedure (pseudo-code) to sample
 
-```{r eval=FALSE}
+```
 procedure Sampling-g is
 for(i in 1:size){
   get a random number from standard uniform distribution $\alpha$
@@ -78,7 +78,7 @@ legend(10, 0.25, legend=c("kde of g", "real density g"),
 
 ## Design a procedure (pseudo-code) to use rejection sampling
 Also take $\theta=3$.
-```{r eval=FALSE}
+```
 procedure f-sample-g is
 Generate $Y$ from $g$
 Then, Generate $U$ from standard uniform.
@@ -130,11 +130,12 @@ Let us first generate some data. Setting the parameter as below.
 ##setting
 n = 100
 set.seed(114514)
-delta = 0.8#non-informative
-mu1 = 0.2
-mu2 = 0.8
+# generate setting.
+delta = 0.8
+mu1 = 0.3
+mu2 = 0.7
 sigma1 = 0.1
-sigma2 = 0.5
+sigma2 = 0.9
 
 ## Generate
 u <- rbinom(n, prob = delta, size = 1)
@@ -167,6 +168,15 @@ mymcmc <- function(niter, thetaInit, data, nburn= 100) {
     theta[idx] <- th
     return(logpost(theta, data))
   }
+  indFC <- function(x, idx){
+    if(idx == 5){
+      return((x>=0)*(x<=1))
+    }else if((idx==3) + (idx == 4)>0){
+      return((x>0))
+    }else{
+      return(TRUE)
+    }
+  }
   out <- matrix(thetaInit, niter, p, byrow = TRUE)
   ## Gibbs sampling
   for (i in 2:niter) {
@@ -174,7 +184,7 @@ mymcmc <- function(niter, thetaInit, data, nburn= 100) {
       ## general-purpose arms algorithm
       out[i, j] <- thetaCurrent[j] <-
           HI::arms(thetaCurrent[j], logFC,
-                   function(data, idx) ((data > 0) * (data < 1)), 
+                   function(x, idx) ((x > 0) * (x < 1)), 
                    1, idx = j)
       
     }
@@ -199,5 +209,19 @@ This parameter $1-\delta$ we set as $0.2$.
 ```{r}
 plot(ts(sim[,5]))
 ```
-
+```{r}
+hist(sim[,1],main = 'mu2')
+```
+```{r}
+hist(sim[,2],main = 'mu1')
+```
+```{r}
+hist(sim[,3],main = 'sigma2')
+```
+```{r}
+hist(sim[,4],main = 'sigma1')
+```
+```{r}
+hist(sim[,5],main = '1-alpha')
+```
 bookdown::render_book('hw.rmd','bookdown::gitbook')
